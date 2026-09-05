@@ -36,5 +36,13 @@
     "eslint-config-next": "16.3.4",
     "tailwindcss": "^4",
     "typescript": "^5"
-  }
+  },
+  "description": "**Offline-first track inspection PWA for the Darjeeling Himalayan Railway (DHR).**   Built for the **GDG Siliguri — Code for Communities: Toy Train Edition** hackathon.",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
 }
