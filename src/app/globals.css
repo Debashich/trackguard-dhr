@@ -1,26 +1,157 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #0f131a;
+  --foreground: #f1f5f9;
+
+  /* Surface Hierarchy (OLED & Sunlight Optimization) */
+  --tg-surface: #0f131a;
+  --tg-surface-container: #161b24;
+  --tg-surface-container-high: #1a202c;
+  --tg-surface-dim: #121721;
+  --tg-on-surface: #f1f5f9;
+  --tg-on-surface-variant: #94a3b8;
+  --tg-outline: rgba(148, 163, 184, 0.16);
+  --tg-outline-variant: rgba(148, 163, 184, 0.10);
+
+  /* Primary Brand Accent: Signal Amber 400 */
+  --tg-primary: #fbbf24;
+  --tg-primary-container: rgba(251, 191, 36, 0.14);
+  --tg-on-primary: #1c1300;
+  --tg-on-primary-container: #fde68a;
+
+  /* Semantic Hazard Severity Palette */
+  --tg-severity-low: #34d399;
+  --tg-severity-low-container: rgba(52, 211, 153, 0.14);
+  --tg-severity-medium: #fbbf24;
+  --tg-severity-medium-container: rgba(251, 191, 36, 0.14);
+  --tg-severity-high: #fb923c;
+  --tg-severity-high-container: rgba(251, 146, 60, 0.14);
+  --tg-severity-critical: #fb7185;
+  --tg-severity-critical-container: rgba(251, 113, 133, 0.14);
+
+  /* Semantic Inspection Workflow Palette */
+  --tg-status-open: #fb7185;
+  --tg-status-open-container: rgba(251, 113, 133, 0.14);
+  --tg-status-ack: #38bdf8;
+  --tg-status-ack-container: rgba(56, 189, 248, 0.14);
+  --tg-status-req: #fbbf24;
+  --tg-status-req-container: rgba(251, 191, 36, 0.14);
+  --tg-status-res: #34d399;
+  --tg-status-res-container: rgba(52, 211, 153, 0.14);
+
+  /* Semantic Synchronization Palette */
+  --tg-sync-pending: #fbbf24;
+  --tg-sync-syncing: #38bdf8;
+  --tg-sync-synced: #34d399;
+  --tg-sync-failed: #fb7185;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-tg-surface: var(--tg-surface);
+  --color-tg-surface-container: var(--tg-surface-container);
+  --color-tg-surface-container-high: var(--tg-surface-container-high);
+  --color-tg-surface-dim: var(--tg-surface-dim);
+  --color-tg-on-surface: var(--tg-on-surface);
+  --color-tg-on-surface-variant: var(--tg-on-surface-variant);
+  --color-tg-outline: var(--tg-outline);
+  --color-tg-outline-variant: var(--tg-outline-variant);
+
+  --color-tg-primary: var(--tg-primary);
+  --color-tg-primary-container: var(--tg-primary-container);
+  --color-tg-on-primary: var(--tg-on-primary);
+  --color-tg-on-primary-container: var(--tg-on-primary-container);
+
+  --color-tg-severity-low: var(--tg-severity-low);
+  --color-tg-severity-medium: var(--tg-severity-medium);
+  --color-tg-severity-high: var(--tg-severity-high);
+  --color-tg-severity-critical: var(--tg-severity-critical);
+
+  --color-tg-status-open: var(--tg-status-open);
+  --color-tg-status-ack: var(--tg-status-ack);
+  --color-tg-status-req: var(--tg-status-req);
+  --color-tg-status-res: var(--tg-status-res);
+
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* Base Body Setup */
+body {
+  background-color: var(--tg-surface);
+  color: var(--tg-on-surface);
+  font-family: var(--font-sans), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  min-height: 100vh;
+  min-height: 100dvh;
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden;
+  user-select: none;
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* Touch Ergonomics & Industrial Styling */
+.touch-target {
+  min-height: 48px;
+  min-width: 48px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.card-pressable {
+  transition: transform 0.15s cubic-bezier(0.4, 0, 0.2, 1), background-color 0.15s ease;
+}
+
+.card-pressable:active {
+  transform: scale(0.98);
+}
+
+/* Signal Glows */
+.glow-amber {
+  box-shadow: 0 0 20px -4px rgba(251, 191, 36, 0.35);
+}
+
+.glow-amber-sm {
+  box-shadow: 0 0 10px -2px rgba(251, 191, 36, 0.25);
+}
+
+/* Viewfinder Crosshair / Alignment Reticle */
+.reticle-corner {
+  position: absolute;
+  width: 24px;
+  height: 24px;
+  border-color: var(--tg-primary);
+  opacity: 0.85;
+}
+
+/* Safe Area Inset Support */
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 16px);
+}
+
+.pt-safe {
+  padding-top: env(safe-area-inset-top, 16px);
+}
+
+/* Dark Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--tg-surface);
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.25);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.4);
 }
