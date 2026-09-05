@@ -2,13 +2,28 @@
 
 import { useEffect } from "react";
 
-export function ServiceWorkerRegistration() {
+export default function ServiceWorkerRegistration() {
   useEffect(() => {
-    if (process.env.NODE_ENV !== "production" || !("serviceWorker" in navigator)) {
+    if (!("serviceWorker" in navigator)) {
       return;
     }
 
-    void navigator.serviceWorker.register("/sw.js");
+    const register = async () => {
+      try {
+        await navigator.serviceWorker.register("/sw.js");
+
+        console.log(
+          "TrackGuard service worker registered",
+        );
+      } catch (error) {
+        console.error(
+          "Service worker registration failed:",
+          error,
+        );
+      }
+    };
+
+    register();
   }, []);
 
   return null;

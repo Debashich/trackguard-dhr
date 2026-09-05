@@ -99,12 +99,6 @@ export async function syncNow(): Promise<{
   return { synced, failed };
 }
 
-type SyncCapableRegistration = ServiceWorkerRegistration & {
-  sync?: {
-    register(tag: string): Promise<void>;
-  };
-};
-
 export async function registerBackgroundSync(): Promise<void> {
   if (
     typeof window === "undefined" ||
@@ -115,9 +109,11 @@ export async function registerBackgroundSync(): Promise<void> {
 
   try {
     const registration =
-      (await navigator.serviceWorker.ready) as SyncCapableRegistration;
+      await navigator.serviceWorker.ready;
 
-    if (!registration.sync) return;
+    if (!("sync" in registration)) {
+      return;
+    }
 
     await registration.sync.register("sync-reports");
   } catch (error) {
