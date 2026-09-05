@@ -1,150 +1,58 @@
-"use client";
+'use client';
 
-import { useEffect, useState } from "react";
-import {
-    registerBackgroundSync,
-    syncNow,
-} from "@/lib/sync";
-import { getPendingCount } from "@/lib/storage";
+import { useCallback, useEffect, useState } from 'react';
+import { CheckCircle2, CircleAlert, CloudOff, RefreshCw, Wifi } from 'lucide-react';
+import { toast } from 'sonner';
+import { getFailedCount, getPendingCount } from '@/lib/storage';
+import { syncNow } from '@/lib/sync';
 
-export default function SyncButton() {
-    const [pendingCount, setPendingCount] = useState(0);
-    const [syncing, setSyncing] = useState(false);
-    const [online, setOnline] = useState(
-        () =>
-            typeof navigator !== "undefined"
-                ? navigator.onLine
-                : true,
-    );
-    const [message, setMessage] = useState("");
+interface SyncButtonProps { onSyncComplete?: () => void; }
 
-    const refreshPendingCount = async () => {
-        try {
-            const count = await getPendingCount();
-            setPendingCount(count);
-        } catch (error) {
-            console.error(
-                "Failed to get pending report count:",
-                error,
-            );
-        }
-    };
+export default function SyncButton({ onSyncComplete }: SyncButtonProps) {
+  const [pending, setPending] = useState(0);
+  const [failed, setFailed] = useState(0);
+  const [syncing, setSyncing] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const [online, setOnline] = useState(() => typeof navigator === 'undefined' || navigator.onLine);
+  const [progress, setProgress] = useState<{ completed: number; total: number } | null>(null);
+  const refresh = useCallback(async () => {
+    const [nextPending, nextFailed] = await Promise.all([getPendingCount(), getFailedCount()]);
+    setPending(nextPending); setFailed(nextFailed); setLoaded(true);
+  }, []);
 
-    useEffect(() => {
-        const timer = window.setTimeout(() => {
-            refreshPendingCount();
-        }, 0);
+  useEffect(() => {
+    const initialRefresh = window.setTimeout(() => void refresh(), 0);
+    const goOnline = () => { setOnline(true); void refresh(); };
+    const goOffline = () => setOnline(false);
+    window.addEventListener('online', goOnline); window.addEventListener('offline', goOffline);
+    return () => { window.clearTimeout(initialRefresh); window.removeEventListener('online', goOnline); window.removeEventListener('offline', goOffline); };
+  }, [refresh]);
 
-        const handleOnline = () => {
-            setOnline(true);
-            refreshPendingCount();
-            registerBackgroundSync();
-        };
+  const queued = pending + failed;
+  async function handleSync() {
+    if (!online) return;
+    setSyncing(true); setProgress({ completed: 0, total: queued });
+    try {
+      const result = await syncNow((completed, total) => setProgress({ completed, total }));
+      await refresh(); onSyncComplete?.();
+      if (result.failed) toast.warning(`${result.failed} report${result.failed === 1 ? '' : 's'} need another retry.`);
+      else if (result.synced) toast.success(`${result.synced} report${result.synced === 1 ? '' : 's'} synced.`);
+    } catch (error) {
+      console.error('Sync error:', error);
+      toast.error('Sync could not start. Your reports remain on this device.');
+    } finally { setSyncing(false); setProgress(null); }
+  }
 
-        const handleOffline = () => {
-            setOnline(false);
-        };
+  if (!online) return <div className="flex gap-3" role="status" aria-live="polite">
+    <CloudOff className="mt-0.5 h-5 w-5 shrink-0" style={{ color: 'var(--tg-sync-pending)' }} />
+    <div><p className="font-semibold" style={{ color: 'var(--tg-on-surface)' }}>Offline — reports are safe</p><p className="mt-0.5 text-sm" style={{ color: 'var(--tg-on-surface-variant)' }}>{loaded ? `${queued} report${queued === 1 ? '' : 's'} stored on this device.` : 'Checking reports stored on this device.'} Sync will resume when connectivity returns.</p></div>
+  </div>;
 
-        window.addEventListener("online", handleOnline);
-        window.addEventListener("offline", handleOffline);
-
-        return () => {
-            window.clearTimeout(timer);
-            window.removeEventListener("online", handleOnline);
-            window.removeEventListener("offline", handleOffline);
-        };
-    }, []);
-
-    const handleSync = async () => {
-        if (!navigator.onLine) {
-            setMessage(
-                "You're offline. Reports will sync when you're connected.",
-            );
-            return;
-        }
-
-        if (syncing) return;
-
-        setSyncing(true);
-        setMessage("");
-
-        try {
-            const result = await syncNow();
-
-            await refreshPendingCount();
-
-            if (result.synced > 0 && result.failed === 0) {
-                setMessage(
-                    `${result.synced} report${result.synced === 1 ? "" : "s"
-                    } synced successfully.`,
-                );
-            } else if (
-                result.synced > 0 &&
-                result.failed > 0
-            ) {
-                setMessage(
-                    `${result.synced} synced, ${result.failed} failed. You can retry failed reports.`,
-                );
-            } else if (result.failed > 0) {
-                setMessage(
-                    `${result.failed} report${result.failed === 1 ? "" : "s"
-                    } failed to sync.`,
-                );
-            } else {
-                setMessage("Everything is already synced.");
-            }
-        } catch (error) {
-            console.error("Sync failed:", error);
-            setMessage("Sync failed. Please try again.");
-        } finally {
-            setSyncing(false);
-        }
-    };
-
-    return (
-        <div className="space-y-2">
-            <div className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-3">
-                <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                        <span
-                            className={`h-2.5 w-2.5 rounded-full ${online
-                                    ? "bg-emerald-500"
-                                    : "bg-slate-400"
-                                }`}
-                        />
-
-                        <span className="text-sm font-semibold text-slate-900">
-                            {online ? "Online" : "Offline"}
-                        </span>
-                    </div>
-
-                    <p className="mt-1 text-xs text-slate-500">
-                        {pendingCount > 0
-                            ? `${pendingCount} report${pendingCount === 1 ? "" : "s"
-                            } waiting to sync`
-                            : "All reports synced"}
-                    </p>
-                </div>
-
-                <button
-                    type="button"
-                    onClick={handleSync}
-                    disabled={
-                        !online ||
-                        syncing ||
-                        pendingCount === 0
-                    }
-                    className="shrink-0 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                    {syncing ? "Syncing…" : "Sync Now"}
-                </button>
-            </div>
-
-            {message ? (
-                <p className="px-1 text-xs text-slate-500">
-                    {message}
-                </p>
-            ) : null}
-        </div>
-    );
+  return <div className="flex items-center justify-between gap-4" role="status" aria-live="polite">
+    <div className="min-w-0"><p className="flex items-center gap-1.5 text-sm font-semibold" style={{ color: 'var(--tg-on-surface)' }}>
+      {syncing ? <RefreshCw className="tg-spin h-4 w-4" /> : failed ? <CircleAlert className="h-4 w-4" style={{ color: 'var(--tg-sync-failed)' }} /> : queued ? <Wifi className="h-4 w-4" style={{ color: 'var(--tg-primary)' }} /> : <CheckCircle2 className="h-4 w-4" style={{ color: 'var(--tg-sync-synced)' }} />}
+      {syncing ? `Syncing${progress?.total ? ` · ${progress.completed} of ${progress.total}` : '…'}` : !loaded ? 'Checking device reports…' : failed ? `${failed} report${failed === 1 ? '' : 's'} failed` : queued ? `${queued} report${queued === 1 ? '' : 's'} waiting` : 'All reports synced'}
+    </p><p className="mt-0.5 text-xs" style={{ color: 'var(--tg-on-surface-variant)' }}>{!loaded ? 'Reading reports saved on this device.' : failed ? 'Retry failed reports when you are ready.' : queued ? 'Ready to send to the control desk.' : 'No action needed right now.'}</p></div>
+    {queued > 0 && <button type="button" onClick={handleSync} disabled={syncing} className="touch-target shrink-0 rounded-xl px-4 text-sm font-semibold disabled:opacity-60" style={{ backgroundColor: 'var(--tg-primary)', color: 'var(--tg-on-primary)' }}>{syncing ? 'Syncing' : failed ? 'Retry' : 'Sync now'}</button>}
+  </div>;
 }

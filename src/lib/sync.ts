@@ -1,167 +1,50 @@
-import {
-  getPendingReports,
-  getDB,
-  updateReport,
-} from "./storage";
+import { getDB } from './storage';
+import type { HazardReport } from './types';
 
-let syncInProgress = false;
+export interface SyncResult { synced: number; failed: number; attempted: number; }
 
-export async function syncNow(): Promise<{
-  synced: number;
-  failed: number;
-}> {
-  if (syncInProgress) {
-    return { synced: 0, failed: 0 };
-  }
-
-  if (typeof navigator !== "undefined" && !navigator.onLine) {
-    return { synced: 0, failed: 0 };
-  }
-
-  syncInProgress = true;
-
+export async function syncNow(onProgress?: (completed: number, total: number) => void): Promise<SyncResult> {
+  if (typeof navigator !== 'undefined' && !navigator.onLine) throw new Error('Cannot sync while offline');
+  const db = await getDB();
+  const [pending, failedReports] = await Promise.all([
+    db.getAllFromIndex('reports', 'syncStatus', 'pending') as Promise<HazardReport[]>,
+    db.getAllFromIndex('reports', 'syncStatus', 'failed') as Promise<HazardReport[]>,
+  ]);
+  const reports = [...pending, ...failedReports];
   let synced = 0;
   let failed = 0;
 
-  try {
-    const reports = await getPendingReports();
-
-    for (const report of reports) {
-      try {
-        await updateReport(report.id, {
-          syncStatus: "syncing",
-        });
-
-        const formData = new FormData();
-
-        const {
-          photoBlob,
-          photoThumbnail,
-          ...serializableReport
-        } = report;
-
-        formData.append(
-          "data",
-          JSON.stringify(serializableReport),
-        );
-
-        if (photoBlob instanceof Blob) {
-          formData.append(
-            "photo",
-            photoBlob,
-            `${report.id}.jpg`,
-          );
-        }
-
-        if (photoThumbnail instanceof Blob) {
-          formData.append(
-            "thumbnail",
-            photoThumbnail,
-            `${report.id}-thumb.jpg`,
-          );
-        }
-
-        const response = await fetch("/api/reports", {
-          method: "POST",
-          body: formData,
-        });
-
-        if (!response.ok) {
-          throw new Error(
-            `Sync failed with HTTP ${response.status}`,
-          );
-        }
-
-        await updateReport(report.id, {
-          syncStatus: "synced",
-          syncTimestamp: new Date().toISOString(),
-        });
-
-        synced++;
-      } catch (error) {
-        console.error(
-          `Failed to sync report ${report.id}`,
-          error,
-        );
-
-        await updateReport(report.id, {
-          syncStatus: "failed",
-          retryCount: report.retryCount + 1,
-        });
-
-        failed++;
-      }
+  for (const [index, sourceReport] of reports.entries()) {
+    const report = { ...sourceReport, syncStatus: 'syncing' as const };
+    try {
+      await db.put('reports', report);
+      const { photoBlob, photoThumbnail, ...reportData } = report;
+      // Keep media local; the full image is sent as multipart data below.
+      void photoThumbnail;
+      const formData = new FormData();
+      formData.append('data', JSON.stringify(reportData));
+      if (photoBlob) formData.append('photo', photoBlob, `${report.id}.jpg`);
+      const response = await fetch('/api/reports', { method: 'POST', body: formData });
+      if (!response.ok) throw new Error(`Sync failed with status ${response.status}`);
+      await db.put('reports', { ...report, syncStatus: 'synced', syncTimestamp: new Date().toISOString() });
+      synced += 1;
+    } catch (error) {
+      console.error(`Failed to sync report ${report.id}:`, error);
+      await db.put('reports', { ...report, syncStatus: 'failed', retryCount: (report.retryCount ?? 0) + 1 });
+      failed += 1;
+    } finally {
+      onProgress?.(index + 1, reports.length);
     }
-  } finally {
-    syncInProgress = false;
   }
-
-  return { synced, failed };
+  return { synced, failed, attempted: reports.length };
 }
 
 export async function registerBackgroundSync(): Promise<void> {
-  if (
-    typeof window === "undefined" ||
-    !("serviceWorker" in navigator)
-  ) {
-    return;
-  }
-
+  if (typeof window === 'undefined' || !('serviceWorker' in navigator) || !('SyncManager' in window)) return;
   try {
-    const registration =
-      await navigator.serviceWorker.ready;
-
-    if (!("sync" in registration)) {
-      return;
-    }
-
-    await registration.sync.register("sync-reports");
+    const registration = await navigator.serviceWorker.ready;
+    await registration.sync.register('sync-reports');
   } catch (error) {
-    console.debug(
-      "Background Sync unavailable:",
-      error,
-    );
-  }
-}
-
-export function listenForBackgroundSync(
-  onSync: () => void,
-): () => void {
-  if (
-    typeof navigator === "undefined" ||
-    !("serviceWorker" in navigator)
-  ) {
-    return () => {};
-  }
-
-  const handler = (event: MessageEvent) => {
-    if (event.data?.type === "SYNC_REPORTS") {
-      onSync();
-    }
-  };
-
-  navigator.serviceWorker.addEventListener(
-    "message",
-    handler,
-  );
-
-  return () => {
-    navigator.serviceWorker.removeEventListener(
-      "message",
-      handler,
-    );
-  };
-}
-
-export async function resetStuckSyncingReports(): Promise<void> {
-  const db = await getDB();
-  const reports = await db.getAll("reports");
-
-  for (const report of reports) {
-    if (report.syncStatus === "syncing") {
-      await updateReport(report.id, {
-        syncStatus: "pending",
-      });
-    }
+    console.warn('Background Sync registration failed:', error);
   }
 }

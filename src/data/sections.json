@@ -1,0 +1,16 @@
+[
+  {
+    "id": "kurseong-ghum",
+    "name": "Kurseong → Ghum",
+    "startKm": 31.0,
+    "endKm": 74.0,
+    "stations": ["Kurseong", "Tung", "Sonada", "Rongbull", "Ghum"]
+  },
+  {
+    "id": "ghum-darjeeling",
+    "name": "Ghum → Darjeeling",
+    "startKm": 74.0,
+    "endKm": 88.0,
+    "stations": ["Ghum", "Batasia Loop", "Darjeeling"]
+  }
+]

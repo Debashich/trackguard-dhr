@@ -1,210 +1,284 @@
-// ============================================
-// GEMMA 4 LITERT-LM WEBGPU REASONING ENGINE
-// Reference: docs/gangmans_logbook_solution_CRITICS_RESOLVED.md (Section 9.1)
-// and docs/trackguard_dhr_complete_blueprint.md (Section 5.6)
-// ============================================
-
+// LiteRT-LM / Gemma 4 E2B Multimodal Inference Wrapper for TrackGuard DHR
 import { AIAnalysisResult, HazardType, Severity } from './types';
-import { analyzeImageCues } from './vision';
+import { extractVisualCues, VisualInspectionCues } from './vision';
+
+// Web model checkpoint from litert-community
+export const GEMMA_4_E2B_MODEL_URL =
+  'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it-web.litertlm';
+
+// Filter benign C++ WASM stdout/stderr logs that cause Turbopack to print stack traces in terminal
+if (typeof window !== 'undefined' && !(window as any).__litertLogFiltered) {
+  (window as any).__litertLogFiltered = true;
+  const origWarn = console.warn;
+  const origInfo = console.info;
+
+  console.warn = (...args: any[]) => {
+    const str = args.map((a) => String(a)).join(' ');
+    if (str.includes('npu_registry.cc') || str.includes('NPU accelerator could not be loaded')) {
+      return; // Safe benign notice from LiteRT: NPU not found, falling back to WebGPU
+    }
+    origWarn.apply(console, args);
+  };
+
+  console.info = (...args: any[]) => {
+    const str = args.map((a) => String(a)).join(' ');
+    if (
+      str.includes('environment.cc') ||
+      str.includes('accelerator_registry.cc') ||
+      str.includes('gpu_registry.cc') ||
+      str.includes('cpu_registry.cc')
+    ) {
+      return; // Safe benign C++ WASM accelerator registry log
+    }
+    origInfo.apply(console, args);
+  };
+}
 
 let engineInstance: any = null;
-let activeModelSource: string = 'Default Web Model (LiteRT CDN)';
 let isInitializing = false;
+let initError: string | null = null;
+
+let customModelSource: Blob | string | null = null;
+let customModelName: string | null = null;
 
 /**
- * Checks if the current browser environment supports WebGPU
+ * Configure a custom model source (e.g. a local .litertlm file from disk or alternate URL).
+ */
+export function setCustomModel(source: Blob | string, name?: string) {
+  customModelSource = source;
+  customModelName = name || (typeof source === 'string' ? 'Custom URL' : 'Local File');
+  if (engineInstance) {
+    try {
+      engineInstance.delete?.();
+    } catch {
+      // ignore cleanup errors
+    }
+    engineInstance = null;
+  }
+}
+
+export function getCustomModelInfo(): { isCustom: boolean; name: string | null } {
+  return {
+    isCustom: !!customModelSource,
+    name: customModelName,
+  };
+}
+
+export function resetToDefaultModel() {
+  customModelSource = null;
+  customModelName = null;
+  if (engineInstance) {
+    try {
+      engineInstance.delete?.();
+    } catch {
+      // ignore
+    }
+    engineInstance = null;
+  }
+}
+
+/**
+ * Checks whether WebGPU is supported on this browser / device.
  */
 export function isLLMAvailable(): boolean {
-  if (typeof navigator !== 'undefined' && 'gpu' in navigator) {
-    return (navigator as any).gpu !== undefined;
+  if (typeof window === 'undefined') return false;
+  return 'gpu' in navigator && (navigator as any).gpu !== undefined;
+}
+
+/**
+ * Initializes the LiteRT-LM Engine with Gemma 4 E2B.
+ */
+export async function initLLM(
+  modelSource: string | Blob = customModelSource || GEMMA_4_E2B_MODEL_URL
+): Promise<any> {
+  if (engineInstance) return engineInstance;
+  if (!isLLMAvailable()) {
+    throw new Error('WebGPU is not supported on this device. Manual hazard selection enabled.');
   }
-  return false;
-}
 
-/**
- * Returns current model source name or status
- */
-export function getActiveModelName(): string {
-  return activeModelSource;
-}
-
-/**
- * Initializes the LiteRT-LM WebGPU Engine.
- * Supports passing a local file Blob (from ModelSettingsModal) or default CDN URL.
- */
-export async function initLLM(customModel?: string | Blob): Promise<boolean> {
-  if (engineInstance && !customModel) return true;
-  if (!isLLMAvailable()) return false;
+  if (isInitializing) {
+    // Wait for in-progress initialization
+    while (isInitializing) {
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    if (engineInstance) return engineInstance;
+  }
 
   isInitializing = true;
+  initError = null;
+
   try {
     const { Engine } = await import('@litert-lm/core');
-
-    const modelSource =
-      customModel ||
-      'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it-web.litertlm';
-
     engineInstance = await Engine.create({
-      model: modelSource as any,
+      model: modelSource,
       mainExecutorSettings: {
         maxNumTokens: 1024,
       },
     });
-
-    activeModelSource = typeof customModel === 'string'
-      ? 'Custom URL Model'
-      : customModel instanceof Blob
-      ? 'Local .litertlm File'
-      : 'Gemma 4 E2B (WebGPU)';
-
+    return engineInstance;
+  } catch (err: unknown) {
+    initError = err instanceof Error ? err.message : 'Failed to initialize LiteRT-LM model';
+    console.warn('[LiteRT-LM] Model init failed, fallback mode active:', initError);
+    throw new Error(initError);
+  } finally {
     isInitializing = false;
-    return true;
-  } catch (err) {
-    console.warn('[LiteRT-LM] Engine initialization skipped/failed:', err);
-    isInitializing = false;
-    engineInstance = null;
-    return false;
   }
 }
 
 /**
- * Generates an intelligent, deterministic fallback suggestion using canvas CV cues
- * when WebGPU runtime is unavailable or offline.
- */
-function generateCVBasedSuggestion(cues: {
-  mudSiltPercent: number;
-  foliagePercent: number;
-  waterSpecularPercent: number;
-  ballastTextureScore: number;
-  transverseCrackDetected: boolean;
-}): AIAnalysisResult {
-  if (cues.transverseCrackDetected) {
-    return {
-      type: 'track_defect',
-      severity: 'high',
-      note: 'Linear track discontinuity or obstruction detected across rail alignment. Suggested: check rail joint clearance and gauge integrity.',
-    };
-  }
-
-  if (cues.mudSiltPercent > 22) {
-    const severity: Severity = cues.mudSiltPercent > 40 ? 'critical' : 'high';
-    return {
-      type: 'slip',
-      severity,
-      note: `Earthy slope wash and mud silt observed on trackbed (${cues.mudSiltPercent}%). Suggested: inspect upslope retaining wall for fresh fracture.`,
-    };
-  }
-
-  if (cues.waterSpecularPercent > 15) {
-    return {
-      type: 'blocked_drain',
-      severity: 'medium',
-      note: `Water ponding detected along track formation (${cues.waterSpecularPercent}%). Suggested: inspect mountain catchwater drain for blockage.`,
-    };
-  }
-
-  if (cues.foliagePercent > 30) {
-    return {
-      type: 'vegetation',
-      severity: 'low',
-      note: `Dense trackside foliage encroaching into kinematic clearance zone (${cues.foliagePercent}%). Suggested: schedule routine brush clearing.`,
-    };
-  }
-
-  if (cues.ballastTextureScore < 20) {
-    return {
-      type: 'damaged_wall',
-      severity: 'medium',
-      note: 'Irregular masonry profile or structural displacement observed adjacent to track. Suggested: check retaining wall weep holes.',
-    };
-  }
-
-  // Default baseline observational suggestion
-  return {
-    type: 'rockfall',
-    severity: 'medium',
-    note: 'Debris and ballast displacement visible along mountain rail cutting. Suggested: verify line clearance before next train passage.',
-  };
-}
-
-/**
- * Main inference pipeline:
- * 1. Computes client-side canvas CV telemetry
- * 2. Attempts WebGPU Gemma 4 inference with strict observational guardrails
- * 3. Falls back gracefully to deterministic rule-based suggestions if needed
+ * Analyzes a track inspection photo and location context using Gemma 4 E2B.
+ * Returns structured hazard suggestions (type, severity, observational note).
  */
 export async function analyzeHazard(
   imageBlob: Blob,
   location: { lat: number; lng: number; kmMarker: string }
 ): Promise<AIAnalysisResult> {
-  // Step 1: Compute Edge CV Telemetry from Image Pixels
-  const cues = await analyzeImageCues(imageBlob);
+  // Extract visual cues from image canvas
+  const visualCues = await extractVisualCues(imageBlob);
 
-  // Step 2: Attempt On-Device Gemma 4 Inference if WebGPU is active
-  if (isLLMAvailable() && !engineInstance && !isInitializing) {
-    await initLLM();
+  // Compute smart baseline based on visual cues
+  const smartBaseline = getBaselineFromVisualCues(visualCues, location);
+
+  // If WebGPU is not supported, return the vision-derived baseline
+  if (!isLLMAvailable()) {
+    return smartBaseline;
   }
 
-  if (engineInstance) {
-    try {
-      const conversation = await engineInstance.createConversation({
-        preface: {
-          messages: [
-            {
-              role: 'system',
-              content: `You are TrackGuard AI, an observational railway track inspection assistant for the Darjeeling Himalayan Railway (DHR).
-You are analyzing inspection telemetry taken by a gangman.
-HAZARD TYPES: [slip, rockfall, blocked_drain, damaged_wall, track_defect, vegetation, other]
-SEVERITIES: [low, medium, high, critical]
+  try {
+    const engine = await initLLM();
+    const conversation = await engine.createConversation({
+      preface: {
+        messages: [
+          {
+            role: 'system',
+            content: `You are an expert railway track safety inspection assistant for the Darjeeling Himalayan Railway (DHR).
+Analyze the camera visual cues and location context provided.
+IMPORTANT RAILWAY SAFETY CLASSIFICATION RULES:
+- If a rail is fractured, cracked, broken, separated, or misaligned, the hazard is STRICTLY "track_defect" and severity is "critical". Note: Track ballast (gravel aggregate under sleepers) is normal track foundation, NOT a rockfall.
+- If mud or soil has slid down a slope, the hazard is "slip".
+- If loose boulders or detached rocks from the cutting face block the line, the hazard is "rockfall".
+- If culverts or drainage channels are choked or waterlogged, the hazard is "blocked_drain".
+- If masonry retaining walls show cracks or displacement, the hazard is "damaged_wall".
+- If tree branches or foliage encroaches within train clearance, the hazard is "vegetation".
 
-SAFETY RULES:
-1. Describe ONLY factual, physical observations visible in telemetry.
-2. DO NOT make operational decisions (e.g., do NOT command halting trains or closing lines).
-3. Always suggest what physical feature the gangman should verify.
-4. Keep the observational note under 45 words.
-5. Respond in valid JSON format only:
-{"type": "<type>", "severity": "<severity>", "note": "<observational note>"}`,
-            },
-          ],
-        },
-      });
+Provide:
+1. HAZARD TYPE: strictly one of [slip, rockfall, blocked_drain, damaged_wall, track_defect, vegetation, other]
+2. SUGGESTED SEVERITY: strictly one of [low, medium, high, critical]
+3. OBSERVATIONAL NOTE: A brief factual note under 40 words describing the visible condition.
+   - Mention what is visible.
+   - Do NOT give operational orders (like halting train traffic).
+   - Suggest what field inspection is needed.
 
-      const prompt = `Inspection Telemetry:
-Location: KM ${location.kmMarker} (${location.lat.toFixed(4)}°N, ${location.lng.toFixed(4)}°E)
-Edge CV Telemetry:
-- Mud/Silt Ratio: ${cues.mudSiltPercent}%
-- Foliage Coverage: ${cues.foliagePercent}%
-- Water Pooling: ${cues.waterSpecularPercent}%
-- Ballast Roughness: ${cues.ballastTextureScore}/100
-- Transverse Anomaly: ${cues.transverseCrackDetected ? 'DETECTED' : 'NONE'}
-- Visual Summary: ${cues.summary}
+Respond strictly with valid JSON:
+{"type": "...", "severity": "...", "note": "..."}`,
+          },
+        ],
+      },
+    });
 
-Provide classification and observational inspection note in JSON.`;
+    const prompt = `Camera Inspection Telemetry:
+- Visual Observation: ${visualCues.summaryDescription}
+- Detected Cues: ${visualCues.detectedPatterns.join(', ')}
+- Primary Visual Indicator: ${visualCues.suggestedHazardType} (Estimated severity: ${visualCues.suggestedSeverity})
+- Alignment Location: DHR km ${location.kmMarker} (${location.lat.toFixed(4)}°N, ${location.lng.toFixed(4)}°E)
 
-      const response = await conversation.sendMessage(prompt);
-      const text = typeof response.content === 'string'
-        ? response.content
-        : Array.isArray(response.content)
-        ? (response.content[0] as any)?.text || ''
-        : '';
+Provide suggested hazard type, severity suggestion, and observational note in JSON.`;
 
-      // Clean JSON string (remove ```json fences)
-      const cleanJson = text.replace(/```json\s*|```/g, '').trim();
-      const parsed = JSON.parse(cleanJson);
+    const stream = conversation.sendMessageStreaming(prompt);
+    let fullResponse = '';
 
-      const validTypes: HazardType[] = ['slip', 'rockfall', 'blocked_drain', 'damaged_wall', 'track_defect', 'vegetation', 'other'];
-      const validSeverities: Severity[] = ['low', 'medium', 'high', 'critical'];
-
-      const type: HazardType = validTypes.includes(parsed.type) ? parsed.type : 'other';
-      const severity: Severity = validSeverities.includes(parsed.severity) ? parsed.severity : 'medium';
-      const note: string = parsed.note || cues.summary;
-
-      return { type, severity, note };
-    } catch (err) {
-      console.warn('[LiteRT-LM] Inference failed or JSON malformed, falling back to CV telemetry:', err);
+    for await (const chunk of stream) {
+      if (chunk.content && chunk.content[0] && chunk.content[0].text) {
+        fullResponse += chunk.content[0].text;
+      }
     }
-  }
 
-  // Step 3: Fast, robust deterministic fallback
-  return generateCVBasedSuggestion(cues);
+    // Try parsing JSON response
+    const jsonMatch = fullResponse.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[0]);
+      let parsedType = sanitizeHazardType(parsed.type);
+
+      // Guard against common LLM hallucination: confusing normal ballast gravel with rockfall
+      if (
+        visualCues.suggestedHazardType === 'track_defect' &&
+        parsedType === 'rockfall'
+      ) {
+        parsedType = 'track_defect';
+      }
+
+      if (parsedType && parsedType !== 'other') {
+        return {
+          type: parsedType,
+          severity:
+            parsedType === 'track_defect'
+              ? 'critical'
+              : sanitizeSeverity(parsed.severity),
+          note: parsed.note || smartBaseline.note,
+        };
+      }
+    }
+
+    // If model returned generic text or "please provide photo", use visual cues
+    if (fullResponse.toLowerCase().includes('please provide') || !jsonMatch) {
+      return smartBaseline;
+    }
+
+    return {
+      type: sanitizeHazardType(smartBaseline.type),
+      severity: sanitizeSeverity(smartBaseline.severity),
+      note: fullResponse.slice(0, 160) || smartBaseline.note,
+    };
+  } catch (error) {
+    console.warn('[LiteRT-LM] Inference failed, using visual telemetry fallback:', error);
+    return smartBaseline;
+  }
+}
+
+function getBaselineFromVisualCues(
+  cues: VisualInspectionCues,
+  location: { lat: number; lng: number; kmMarker: string }
+): AIAnalysisResult {
+  const hazardType = cues.suggestedHazardType || 'track_defect';
+  const severity = cues.suggestedSeverity || (hazardType === 'track_defect' ? 'critical' : 'high');
+
+  const specificNotes: Record<HazardType, string> = {
+    track_defect: `Severe transverse rail fracture with visible separation gap on rail head near km ${location.kmMarker}. Critical track defect; requires emergency track protection and fishplate clamping.`,
+    slip: `Slope earth movement / mud slurry displacing onto cutting near km ${location.kmMarker}. Inspect slope stability and clear track profile.`,
+    rockfall: `Loose rock debris / boulder mass detached from cutting near km ${location.kmMarker}. Clearance envelope inspection advised.`,
+    blocked_drain: `Culvert waterlogging or drain channel silt obstruction visible near km ${location.kmMarker}. Check intake for silt and debris.`,
+    damaged_wall: `Masonry retaining wall displaying shear cracking or stone displacement near km ${location.kmMarker}. Structural inspection advised.`,
+    vegetation: `Vegetation / tree branches encroaching on track clearance near km ${location.kmMarker}. Clearance trimming suggested.`,
+    other: `Track alignment anomaly recorded near km ${location.kmMarker}. Physical verification suggested.`,
+  };
+
+  return {
+    type: hazardType,
+    severity,
+    note: specificNotes[hazardType] || specificNotes.other,
+  };
+}
+
+function sanitizeHazardType(val: any): HazardType {
+  const allowed: HazardType[] = [
+    'slip',
+    'rockfall',
+    'blocked_drain',
+    'damaged_wall',
+    'track_defect',
+    'vegetation',
+    'other',
+  ];
+  if (typeof val === 'string' && allowed.includes(val.toLowerCase() as HazardType)) {
+    return val.toLowerCase() as HazardType;
+  }
+  return 'other';
+}
+
+function sanitizeSeverity(val: any): Severity {
+  const allowed: Severity[] = ['low', 'medium', 'high', 'critical'];
+  if (typeof val === 'string' && allowed.includes(val.toLowerCase() as Severity)) {
+    return val.toLowerCase() as Severity;
+  }
+  return 'medium';
 }

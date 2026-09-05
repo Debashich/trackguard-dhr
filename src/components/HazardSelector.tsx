@@ -1,75 +1,67 @@
 'use client';
 
-// ============================================
-// HAZARD SELECTOR & HUMAN OVERRIDE CONTROLS
-// Reference: docs/trackguard_dhr_complete_blueprint.md (Section 5.2)
-// Gangman's authoritative control panel during report review
-// ============================================
-
 import React from 'react';
-import { HazardType, Severity, HAZARD_OPTIONS, SEVERITY_OPTIONS } from '@/lib/types';
-import { SeverityBadge } from './SeverityBadge';
-import { cn } from '@/lib/utils';
-import { MapPin, AlertCircle, Edit3, Sparkles } from 'lucide-react';
+import {
+  HazardType,
+  Severity,
+  HAZARD_OPTIONS,
+  SEVERITY_OPTIONS,
+} from '@/lib/types';
+import { Textarea } from '@/components/ui/textarea';
+import HazardIcon from '@/components/HazardIcon';
 
 interface HazardSelectorProps {
   hazardType: HazardType;
-  onChangeHazardType: (type: HazardType) => void;
   severity: Severity;
-  onChangeSeverity: (severity: Severity) => void;
+  note: string;
   kmMarker: string;
-  onChangeKmMarker: (km: string) => void;
-  userNote: string;
-  onChangeUserNote: (note: string) => void;
-  nearestWaypointName?: string;
-  isAiSuggested?: boolean;
+  onHazardTypeChange: (type: HazardType) => void;
+  onSeverityChange: (severity: Severity) => void;
+  onNoteChange: (note: string) => void;
+  onKmMarkerChange?: (km: string) => void;
+  disabled?: boolean;
 }
 
-const QUICK_TAGS = [
-  'Loose boulders on track',
-  'Drain completely clogged',
-  'Water overtopping rails',
-  'Retaining wall bulging',
-  'Rail joint gap widening',
-  'Tree blocking clearance',
-];
-
-export function HazardSelector({
+export default function HazardSelector({
   hazardType,
-  onChangeHazardType,
   severity,
-  onChangeSeverity,
+  note,
   kmMarker,
-  onChangeKmMarker,
-  userNote,
-  onChangeUserNote,
-  nearestWaypointName,
-  isAiSuggested = false,
+  onHazardTypeChange,
+  onSeverityChange,
+  onNoteChange,
+  onKmMarkerChange,
+  disabled = false,
 }: HazardSelectorProps) {
-  const handleAddQuickTag = (tag: string) => {
-    if (!userNote.trim()) {
-      onChangeUserNote(tag);
-    } else if (!userNote.includes(tag)) {
-      onChangeUserNote(`${userNote.trim()}. ${tag}`);
-    }
-  };
-
   return (
-    <div className="space-y-5">
-      {/* 1. Hazard Classification */}
-      <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <label className="text-xs font-mono uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-            <AlertCircle className="w-3.5 h-3.5 text-[#fbbf24]" />
-            Hazard Classification
+    <div className="space-y-5 text-slate-100">
+      {/* 1. Track Location / KM Marker */}
+      {onKmMarkerChange && (
+        <div className="space-y-1.5">
+          <label className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+            DHR Alignment Km Marker
           </label>
-          {isAiSuggested && (
-            <span className="inline-flex items-center gap-1 text-[11px] font-mono text-[#fbbf24] bg-[#fbbf24]/10 px-2 py-0.5 rounded-full border border-[#fbbf24]/20">
-              <Sparkles className="w-3 h-3" /> AI Pre-filled (Editable)
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-mono font-semibold text-slate-400 bg-slate-800 px-3 py-2 rounded-lg border border-slate-700">
+              KM
             </span>
-          )}
+            <input
+              type="text"
+              value={kmMarker}
+              onChange={(e) => onKmMarkerChange(e.target.value)}
+              disabled={disabled}
+              placeholder="e.g. 74.2 (Ghum)"
+              className="flex-1 rounded-lg border border-slate-800 bg-[#131720] px-3 py-2 text-sm font-semibold text-slate-100 placeholder:text-slate-500 focus:outline-none focus:ring-1 focus:ring-amber-500/50 focus:border-amber-500/50"
+            />
+          </div>
         </div>
+      )}
 
+      {/* 2. Hazard Type Grid Selection */}
+      <div className="space-y-2">
+        <label className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+          Hazard Classification (Human Confirmed)
+        </label>
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
           {HAZARD_OPTIONS.map((opt) => {
             const isSelected = hazardType === opt.value;
@@ -77,15 +69,23 @@ export function HazardSelector({
               <button
                 key={opt.value}
                 type="button"
-                onClick={() => onChangeHazardType(opt.value)}
-                className={cn(
-                  'touch-target flex items-center gap-2 px-3 py-2.5 rounded-xl border text-left card-pressable text-xs font-medium transition-colors',
+                disabled={disabled}
+                onClick={() => onHazardTypeChange(opt.value)}
+                className={`flex items-center gap-2.5 p-2.5 rounded-xl border text-left text-xs font-medium transition-all ${
                   isSelected
-                    ? 'bg-[#fbbf24]/15 border-[#fbbf24] text-[#fbbf24] font-semibold'
-                    : 'bg-[#161b24] border-slate-800 text-slate-300 hover:bg-slate-800/60'
-                )}
+                    ? 'border-amber-500/50 bg-amber-500/10 text-amber-300 shadow-sm ring-1 ring-amber-500/30'
+                    : 'border-slate-800 bg-[#161b24] hover:border-slate-700 text-slate-300'
+                }`}
               >
-                <span className="text-base shrink-0">{opt.icon}</span>
+                <div
+                  className={`p-1.5 rounded-lg ${
+                    isSelected
+                      ? 'bg-amber-500/20 text-amber-400'
+                      : 'bg-slate-800 text-slate-400'
+                  }`}
+                >
+                  <HazardIcon type={opt.value} className="h-4 w-4 shrink-0" />
+                </div>
                 <span className="truncate">{opt.label}</span>
               </button>
             );
@@ -93,120 +93,70 @@ export function HazardSelector({
         </div>
       </div>
 
-      {/* 2. Severity Level Selector */}
+      {/* 3. Severity Level Selection */}
       <div className="space-y-2">
-        <label className="text-xs font-mono uppercase tracking-wider text-slate-400">
-          Severity Level (Gangman's Authority)
+        <label className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+          Inspection Severity Level
         </label>
         <div className="grid grid-cols-4 gap-2">
           {SEVERITY_OPTIONS.map((opt) => {
             const isSelected = severity === opt.value;
+
+            // Comfortable, muted badge colors
+            const styleMap: Record<Severity, { active: string; inactive: string }> = {
+              low: {
+                active: 'bg-emerald-600 text-white border-emerald-500 shadow-sm',
+                inactive: 'bg-[#161b24] text-slate-400 border-slate-800 hover:border-slate-700 hover:text-emerald-400',
+              },
+              medium: {
+                active: 'bg-amber-600 text-white border-amber-500 shadow-sm',
+                inactive: 'bg-[#161b24] text-slate-400 border-slate-800 hover:border-slate-700 hover:text-amber-400',
+              },
+              high: {
+                active: 'bg-orange-600 text-white border-orange-500 shadow-sm',
+                inactive: 'bg-[#161b24] text-slate-400 border-slate-800 hover:border-slate-700 hover:text-orange-400',
+              },
+              critical: {
+                active: 'bg-rose-600 text-white border-rose-500 shadow-sm',
+                inactive: 'bg-[#161b24] text-slate-400 border-slate-800 hover:border-slate-700 hover:text-rose-400',
+              },
+            };
+
+            const styling = styleMap[opt.value];
+
             return (
               <button
                 key={opt.value}
                 type="button"
-                onClick={() => onChangeSeverity(opt.value)}
-                className={cn(
-                  'touch-target flex flex-col items-center justify-center p-2 rounded-xl border card-pressable transition-all',
-                  isSelected
-                    ? 'ring-2 ring-offset-2 ring-offset-[#0f131a] border-transparent font-bold'
-                    : 'bg-[#161b24] border-slate-800/80 text-slate-400 hover:bg-slate-800/40'
-                )}
-                style={
-                  isSelected
-                    ? {
-                        backgroundColor: `${opt.color}22`,
-                        borderColor: opt.color,
-                        boxShadow: `0 0 12px ${opt.color}33`,
-                      }
-                    : undefined
-                }
+                disabled={disabled}
+                onClick={() => onSeverityChange(opt.value)}
+                className={`py-2 px-1 text-center rounded-lg border text-xs font-semibold uppercase tracking-wider transition-all ${
+                  isSelected ? styling.active : styling.inactive
+                }`}
               >
-                <SeverityBadge severity={opt.value} size="sm" />
+                {opt.label}
               </button>
             );
           })}
         </div>
       </div>
 
-      {/* 3. Kilometer Marker & Location Stone */}
-      <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <label className="text-xs font-mono uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-            <MapPin className="w-3.5 h-3.5 text-[#fbbf24]" />
-            Nearest DHR Kilometer Stone
+      {/* 4. Observational Note Textarea */}
+      <div className="space-y-1.5">
+        <div className="flex justify-between items-center">
+          <label className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+            Observational Inspection Note
           </label>
-          {nearestWaypointName && (
-            <span className="text-[11px] font-mono text-slate-400">
-              Near {nearestWaypointName}
-            </span>
-          )}
+          <span className="text-[11px] text-slate-400">Factual details only</span>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="relative flex-1">
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 font-mono text-xs text-slate-500 font-bold">
-              KM
-            </span>
-            <input
-              type="text"
-              value={kmMarker}
-              onChange={(e) => onChangeKmMarker(e.target.value)}
-              placeholder="e.g. 51.0"
-              className="w-full bg-[#161b24] border border-slate-800 focus:border-[#fbbf24] rounded-xl pl-11 pr-3 py-2.5 font-mono text-sm text-slate-100 placeholder-slate-600 outline-none transition-colors"
-            />
-          </div>
-          <div className="flex gap-1 shrink-0">
-            <button
-              type="button"
-              onClick={() => {
-                const num = parseFloat(kmMarker) || 51.0;
-                onChangeKmMarker((num - 0.1).toFixed(1));
-              }}
-              className="touch-target px-3 rounded-xl bg-[#161b24] border border-slate-800 text-slate-300 hover:bg-slate-800 font-mono text-xs card-pressable"
-            >
-              -0.1
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                const num = parseFloat(kmMarker) || 51.0;
-                onChangeKmMarker((num + 0.1).toFixed(1));
-              }}
-              className="touch-target px-3 rounded-xl bg-[#161b24] border border-slate-800 text-slate-300 hover:bg-slate-800 font-mono text-xs card-pressable"
-            >
-              +0.1
-            </button>
-          </div>
-        </div>
-      </div>
-
-      {/* 4. Gangman's Official Logbook Note */}
-      <div className="space-y-2">
-        <label className="text-xs font-mono uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-          <Edit3 className="w-3.5 h-3.5 text-[#fbbf24]" />
-          Gangman's Official Note
-        </label>
-        <textarea
+        <Textarea
+          value={note}
+          onChange={(e) => onNoteChange(e.target.value)}
+          disabled={disabled}
+          placeholder="Describe visible signs (e.g. mud slurry over culvert inlet, rail clearance obstructed by rockfall)..."
           rows={3}
-          value={userNote}
-          onChange={(e) => onChangeUserNote(e.target.value)}
-          placeholder="Enter detailed observations, track clearance status, or recommended maintenance..."
-          className="w-full bg-[#161b24] border border-slate-800 focus:border-[#fbbf24] rounded-xl p-3 text-xs text-slate-100 placeholder-slate-600 outline-none transition-colors resize-none leading-relaxed"
+          className="text-sm border-slate-800 bg-[#131720] text-slate-100 placeholder:text-slate-500 focus-visible:ring-amber-500/50 resize-none font-normal rounded-lg"
         />
-
-        {/* Quick Tag Tap Chips (Glove-Friendly) */}
-        <div className="flex flex-wrap gap-1.5 pt-1">
-          {QUICK_TAGS.map((tag) => (
-            <button
-              key={tag}
-              type="button"
-              onClick={() => handleAddQuickTag(tag)}
-              className="text-[11px] bg-[#1a202c] hover:bg-[#fbbf24]/15 hover:text-[#fbbf24] hover:border-[#fbbf24]/30 border border-slate-800 text-slate-400 px-2.5 py-1 rounded-lg transition-colors card-pressable"
-            >
-              + {tag}
-            </button>
-          ))}
-        </div>
       </div>
     </div>
   );

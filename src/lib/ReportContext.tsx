@@ -1,15 +1,9 @@
 'use client';
 
-// ============================================
-// REPORT DRAFT CONTEXT
-// Reference: docs/trackguard_dhr_complete_blueprint.md (Section 5.7)
-// Manages in-memory state across report capture and review screens
-// ============================================
+import React, { createContext, useContext, useState, ReactNode } from 'react';
+import { GeoLocationResult } from './geo';
 
-import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
-import { GeoLocationResult } from './types';
-
-export interface ReportDraft {
+interface ReportDraft {
   photoBlob: Blob | null;
   photoThumbnail: Blob | null;
   photoPreviewUrl: string | null;
@@ -18,14 +12,14 @@ export interface ReportDraft {
 
 interface ReportContextType {
   draft: ReportDraft;
-  setDraftPhoto: (fullBlob: Blob, thumbnailBlob: Blob) => void;
+  setDraftPhoto: (photoBlob: Blob, photoThumbnail: Blob) => void;
   setDraftLocation: (location: GeoLocationResult) => void;
   clearDraft: () => void;
 }
 
 const ReportContext = createContext<ReportContextType | undefined>(undefined);
 
-export function ReportProvider({ children }: { children: React.ReactNode }) {
+export function ReportProvider({ children }: { children: ReactNode }) {
   const [draft, setDraft] = useState<ReportDraft>({
     photoBlob: null,
     photoThumbnail: null,
@@ -33,51 +27,38 @@ export function ReportProvider({ children }: { children: React.ReactNode }) {
     location: null,
   });
 
-  const setDraftPhoto = useCallback((fullBlob: Blob, thumbnailBlob: Blob) => {
-    setDraft((prev) => {
-      // Clean up previous preview URL to prevent memory leaks
-      if (prev.photoPreviewUrl) {
-        URL.revokeObjectURL(prev.photoPreviewUrl);
-      }
-      const previewUrl = URL.createObjectURL(fullBlob);
-      return {
-        ...prev,
-        photoBlob: fullBlob,
-        photoThumbnail: thumbnailBlob,
-        photoPreviewUrl: previewUrl,
-      };
-    });
-  }, []);
+  const setDraftPhoto = (photoBlob: Blob, photoThumbnail: Blob) => {
+    // Revoke previous URL to avoid memory leaks
+    if (draft.photoPreviewUrl) {
+      URL.revokeObjectURL(draft.photoPreviewUrl);
+    }
+    const previewUrl = URL.createObjectURL(photoBlob);
+    setDraft((prev) => ({
+      ...prev,
+      photoBlob,
+      photoThumbnail,
+      photoPreviewUrl: previewUrl,
+    }));
+  };
 
-  const setDraftLocation = useCallback((location: GeoLocationResult) => {
+  const setDraftLocation = (location: GeoLocationResult) => {
     setDraft((prev) => ({
       ...prev,
       location,
     }));
-  }, []);
+  };
 
-  const clearDraft = useCallback(() => {
-    setDraft((prev) => {
-      if (prev.photoPreviewUrl) {
-        URL.revokeObjectURL(prev.photoPreviewUrl);
-      }
-      return {
-        photoBlob: null,
-        photoThumbnail: null,
-        photoPreviewUrl: null,
-        location: null,
-      };
+  const clearDraft = () => {
+    if (draft.photoPreviewUrl) {
+      URL.revokeObjectURL(draft.photoPreviewUrl);
+    }
+    setDraft({
+      photoBlob: null,
+      photoThumbnail: null,
+      photoPreviewUrl: null,
+      location: null,
     });
-  }, []);
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      if (draft.photoPreviewUrl) {
-        URL.revokeObjectURL(draft.photoPreviewUrl);
-      }
-    };
-  }, [draft.photoPreviewUrl]);
+  };
 
   return (
     <ReportContext.Provider
@@ -93,10 +74,10 @@ export function ReportProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
-export function useReportDraft() {
+export function useReport() {
   const context = useContext(ReportContext);
   if (!context) {
-    throw new Error('useReportDraft must be used within a ReportProvider');
+    throw new Error('useReport must be used within a ReportProvider');
   }
   return context;
 }

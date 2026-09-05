@@ -1,107 +1,39 @@
-// ============================================
-// DHR WAYPOINTS & HAVERSINE GEO ENGINE
-// Reference: docs/trackguard_dhr_complete_blueprint.md (Section 5.4)
-// ============================================
+// GPS Utilities and DHR Waypoint Mapping for TrackGuard DHR
 
-import { GeoLocationResult } from './types';
-
-export interface DHRWaypoint {
-  id: string;
-  name: string;
-  kmMarker: number;
+export interface GeoLocationResult {
   latitude: number;
   longitude: number;
-  altitudeMeters: number;
+  accuracy: number;
+  kmMarker: string;
+  section: string;
+  nearestStationName?: string;
+  distanceToAlignmentKm?: number;
+  isSimulated?: boolean;
+}
+
+export interface DHRWaypoint {
+  name: string;
+  km: number;
+  lat: number;
+  lng: number;
   section: 'kurseong-ghum' | 'ghum-darjeeling';
 }
 
-// Official UNESCO DHR Alignment Milestones (88 km alignment)
+// Key reference waypoints along the Darjeeling Himalayan Railway (DHR)
 export const DHR_WAYPOINTS: DHRWaypoint[] = [
-  {
-    id: 'kurseong',
-    name: 'Kurseong Station',
-    kmMarker: 51.0,
-    latitude: 26.8814,
-    longitude: 88.2783,
-    altitudeMeters: 1483,
-    section: 'kurseong-ghum',
-  },
-  {
-    id: 'tung',
-    name: 'Tung Station',
-    kmMarker: 58.0,
-    latitude: 26.9247,
-    longitude: 88.2612,
-    altitudeMeters: 1728,
-    section: 'kurseong-ghum',
-  },
-  {
-    id: 'dilaram',
-    name: 'Dilaram Point',
-    kmMarker: 61.2,
-    latitude: 26.9450,
-    longitude: 88.2680,
-    altitudeMeters: 1810,
-    section: 'kurseong-ghum',
-  },
-  {
-    id: 'sonada',
-    name: 'Sonada Station',
-    kmMarker: 64.5,
-    latitude: 26.9637,
-    longitude: 88.2709,
-    altitudeMeters: 1996,
-    section: 'kurseong-ghum',
-  },
-  {
-    id: 'rongbull',
-    name: 'Rongbull Loop',
-    kmMarker: 70.0,
-    latitude: 26.9850,
-    longitude: 88.2750,
-    altitudeMeters: 2110,
-    section: 'kurseong-ghum',
-  },
-  {
-    id: 'jorebungalow',
-    name: 'Jorebungalow',
-    kmMarker: 72.8,
-    latitude: 27.0040,
-    longitude: 88.2620,
-    altitudeMeters: 2200,
-    section: 'kurseong-ghum',
-  },
-  {
-    id: 'ghum',
-    name: 'Ghum Station Summit',
-    kmMarker: 74.2,
-    latitude: 27.0116,
-    longitude: 88.2580,
-    altitudeMeters: 2258,
-    section: 'kurseong-ghum',
-  },
-  {
-    id: 'batasia',
-    name: 'Batasia Loop',
-    kmMarker: 78.5,
-    latitude: 27.0168,
-    longitude: 88.2464,
-    altitudeMeters: 2145,
-    section: 'ghum-darjeeling',
-  },
-  {
-    id: 'darjeeling',
-    name: 'Darjeeling Station',
-    kmMarker: 88.0,
-    latitude: 27.0396,
-    longitude: 88.2625,
-    altitudeMeters: 2073,
-    section: 'ghum-darjeeling',
-  },
+  { name: 'Kurseong Station', km: 51.0, lat: 26.8814, lng: 88.2783, section: 'kurseong-ghum' },
+  { name: 'Tung Station', km: 58.0, lat: 26.9247, lng: 88.2612, section: 'kurseong-ghum' },
+  { name: 'Dilaram Point', km: 61.2, lat: 26.9450, lng: 88.2680, section: 'kurseong-ghum' },
+  { name: 'Sonada Station', km: 64.5, lat: 26.9637, lng: 88.2709, section: 'kurseong-ghum' },
+  { name: 'Rongbull Loop', km: 70.0, lat: 26.9850, lng: 88.2750, section: 'kurseong-ghum' },
+  { name: 'Jorebungalow', km: 72.8, lat: 27.0040, lng: 88.2620, section: 'kurseong-ghum' },
+  { name: 'Ghum Station (Summit)', km: 74.2, lat: 27.0116, lng: 88.2580, section: 'ghum-darjeeling' },
+  { name: 'Batasia Loop', km: 78.5, lat: 27.0168, lng: 88.2464, section: 'ghum-darjeeling' },
+  { name: 'Darjeeling Station', km: 88.0, lat: 27.0396, lng: 88.2625, section: 'ghum-darjeeling' },
 ];
 
 /**
- * Pure Haversine formula calculation over Earth radius of 6,371 km
+ * Calculates Great-Circle distance between two coordinates in kilometers (Haversine formula).
  */
 export function calculateDistanceKm(
   lat1: number,
@@ -109,7 +41,7 @@ export function calculateDistanceKm(
   lat2: number,
   lon2: number
 ): number {
-  const R = 6371; // Earth radius in km
+  const R = 6371; // Earth's radius in km
   const dLat = ((lat2 - lat1) * Math.PI) / 180;
   const dLon = ((lon2 - lon1) * Math.PI) / 180;
   const a =
@@ -123,20 +55,20 @@ export function calculateDistanceKm(
 }
 
 /**
- * Finds the closest DHR railway milestone to a coordinate pair
+ * Finds the nearest DHR waypoint and distance in km.
  */
 export function findNearestWaypoint(
   lat: number,
   lng: number
 ): { waypoint: DHRWaypoint; distanceKm: number } {
+  let minDistance = Infinity;
   let nearest = DHR_WAYPOINTS[0];
-  let minDistance = calculateDistanceKm(lat, lng, nearest.latitude, nearest.longitude);
 
-  for (let i = 1; i < DHR_WAYPOINTS.length; i++) {
-    const dist = calculateDistanceKm(lat, lng, DHR_WAYPOINTS[i].latitude, DHR_WAYPOINTS[i].longitude);
+  for (const wp of DHR_WAYPOINTS) {
+    const dist = calculateDistanceKm(lat, lng, wp.lat, wp.lng);
     if (dist < minDistance) {
       minDistance = dist;
-      nearest = DHR_WAYPOINTS[i];
+      nearest = wp;
     }
   }
 
@@ -144,98 +76,56 @@ export function findNearestWaypoint(
 }
 
 /**
- * Returns estimated kilometer marker string formatted to one decimal place
+ * Estimates nearest km marker on DHR based on current GPS location.
  */
 export function estimateKmMarker(lat: number, lng: number): string {
   const { waypoint } = findNearestWaypoint(lat, lng);
-  return waypoint.kmMarker.toFixed(1);
+  return waypoint.km.toFixed(1);
 }
 
 /**
- * Assigns sector: south of Ghum Summit (27.0116°N) is 'kurseong-ghum', north is 'ghum-darjeeling'
+ * Estimates railway section ("kurseong-ghum" or "ghum-darjeeling")
  */
-export function estimateSection(lat: number, _lng: number): 'kurseong-ghum' | 'ghum-darjeeling' {
-  return lat <= 27.0116 ? 'kurseong-ghum' : 'ghum-darjeeling';
+export function estimateSection(lat: number, lng: number): string {
+  if (lat >= 27.0116) {
+    return 'ghum-darjeeling';
+  }
+  return 'kurseong-ghum';
 }
 
 /**
- * Retrieves device GPS coordinates with high accuracy.
- * If away from DHR alignment (>15 km) or if GPS is unavailable, safely falls back
- * to a simulated DHR station location so offline hackathon testing works seamlessly.
+ * Wrapper around navigator.geolocation.getCurrentPosition
  */
-export async function getCurrentPosition(simulatedStationId?: string): Promise<GeoLocationResult> {
-  // If explicitly requesting a simulated station
-  if (simulatedStationId) {
-    const station = DHR_WAYPOINTS.find((w) => w.id === simulatedStationId) || DHR_WAYPOINTS[0];
-    return {
-      latitude: station.latitude,
-      longitude: station.longitude,
-      accuracy: 5,
-      kmMarker: station.kmMarker.toFixed(1),
-      section: station.section,
-      nearestWaypointName: station.name,
-      distanceToTrackKm: 0,
-      isSimulated: true,
-    };
+export async function getCurrentPosition(): Promise<GeoLocationResult> {
+  if (typeof window === 'undefined' || !navigator.geolocation) {
+    throw new Error('Geolocation is not supported by your browser or environment.');
   }
 
-  // Attempt real browser geolocation
-  if (typeof navigator !== 'undefined' && 'geolocation' in navigator) {
-    try {
-      const position = await new Promise<GeolocationPosition>((resolve, reject) => {
-        navigator.geolocation.getCurrentPosition(resolve, reject, {
-          enableHighAccuracy: true,
-          timeout: 8000,
-          maximumAge: 30000,
-        });
-      });
+  return new Promise((resolve, reject) => {
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const { latitude, longitude, accuracy } = pos.coords;
+        const { waypoint, distanceKm } = findNearestWaypoint(latitude, longitude);
 
-      const lat = position.coords.latitude;
-      const lng = position.coords.longitude;
-      const accuracy = position.coords.accuracy || 10;
-      const { waypoint, distanceKm } = findNearestWaypoint(lat, lng);
-
-      // If user is within 15 km of DHR alignment, use real GPS
-      if (distanceKm <= 15) {
-        return {
-          latitude: lat,
-          longitude: lng,
+        resolve({
+          latitude,
+          longitude,
           accuracy,
-          kmMarker: waypoint.kmMarker.toFixed(1),
-          section: estimateSection(lat, lng),
-          nearestWaypointName: waypoint.name,
-          distanceToTrackKm: distanceKm,
-          isSimulated: false,
-        };
+          kmMarker: waypoint.km.toFixed(1),
+          section: waypoint.section,
+          nearestStationName: waypoint.name,
+          distanceToAlignmentKm: Math.round(distanceKm),
+          isSimulated: distanceKm > 15,
+        });
+      },
+      (err) => {
+        reject(err);
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 30000,
       }
-
-      // If user is far from the Himalayas (e.g. testing at home or conference center),
-      // simulate closest milestone or default to Kurseong Station
-      return {
-        latitude: waypoint.latitude,
-        longitude: waypoint.longitude,
-        accuracy: 12,
-        kmMarker: waypoint.kmMarker.toFixed(1),
-        section: waypoint.section,
-        nearestWaypointName: `${waypoint.name} (Simulated)`,
-        distanceToTrackKm: 0,
-        isSimulated: true,
-      };
-    } catch {
-      // On Geolocation rejection or timeout, fall back to Kurseong
-    }
-  }
-
-  // Default fallback milestone
-  const defaultStation = DHR_WAYPOINTS[0];
-  return {
-    latitude: defaultStation.latitude,
-    longitude: defaultStation.longitude,
-    accuracy: 15,
-    kmMarker: defaultStation.kmMarker.toFixed(1),
-    section: defaultStation.section,
-    nearestWaypointName: `${defaultStation.name} (Fallback)`,
-    distanceToTrackKm: 0,
-    isSimulated: true,
-  };
+    );
+  });
 }

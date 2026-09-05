@@ -14,11 +14,11 @@ export interface HazardReport {
   kmMarker: string;
   section: string;
 
-  // Hazard (confirmed by gangman)
+  // Hazard — confirmed by gangman
   hazardType: HazardType;
   severity: Severity;
 
-  // AI suggestions (may differ from confirmed values)
+  // AI suggestions — may differ from confirmed values
   aiSuggestedType: string;
   aiSuggestedSeverity: string;
   aiNote: string;
@@ -36,36 +36,36 @@ export interface HazardReport {
   syncTimestamp: string | null;
   retryCount: number;
 
-  // Meta
+  // Device metadata
   deviceInfo: string;
 }
 
 export type HazardType =
-  | "slip"
-  | "rockfall"
-  | "blocked_drain"
-  | "damaged_wall"
-  | "track_defect"
-  | "vegetation"
-  | "other";
+  | 'slip'
+  | 'rockfall'
+  | 'blocked_drain'
+  | 'damaged_wall'
+  | 'track_defect'
+  | 'vegetation'
+  | 'other';
 
 export type Severity =
-  | "low"
-  | "medium"
-  | "high"
-  | "critical";
+  | 'low'
+  | 'medium'
+  | 'high'
+  | 'critical';
 
 export type InspectionStatus =
-  | "open"
-  | "acknowledged"
-  | "inspection_required"
-  | "resolved";
+  | 'open'
+  | 'acknowledged'
+  | 'inspection_required'
+  | 'resolved';
 
 export type SyncStatus =
-  | "pending"
-  | "syncing"
-  | "synced"
-  | "failed";
+  | 'pending'
+  | 'syncing'
+  | 'synced'
+  | 'failed';
 
 export interface AIAnalysisResult {
   type: HazardType;
@@ -79,39 +79,39 @@ export const HAZARD_OPTIONS: {
   icon: string;
 }[] = [
   {
-    value: "slip",
-    label: "Slip / Landslide",
-    icon: "🏔️",
+    value: 'slip',
+    label: 'Slip / Landslide',
+    icon: 'MountainSnow',
   },
   {
-    value: "rockfall",
-    label: "Rockfall",
-    icon: "🪨",
+    value: 'rockfall',
+    label: 'Rockfall',
+    icon: 'Layers',
   },
   {
-    value: "blocked_drain",
-    label: "Blocked Drain",
-    icon: "🚰",
+    value: 'blocked_drain',
+    label: 'Blocked Drain',
+    icon: 'Droplets',
   },
   {
-    value: "damaged_wall",
-    label: "Damaged Retaining Wall",
-    icon: "🧱",
+    value: 'damaged_wall',
+    label: 'Damaged Retaining Wall',
+    icon: 'BrickWall',
   },
   {
-    value: "track_defect",
-    label: "Track Defect",
-    icon: "🛤️",
+    value: 'track_defect',
+    label: 'Track Defect',
+    icon: 'TrainTrack',
   },
   {
-    value: "vegetation",
-    label: "Vegetation Overgrowth",
-    icon: "🌿",
+    value: 'vegetation',
+    label: 'Vegetation Overgrowth',
+    icon: 'Trees',
   },
   {
-    value: "other",
-    label: "Other",
-    icon: "⚠️",
+    value: 'other',
+    label: 'Other',
+    icon: 'AlertTriangle',
   },
 ];
 
@@ -121,34 +121,34 @@ export const SEVERITY_OPTIONS: {
   color: string;
 }[] = [
   {
-    value: "low",
-    label: "Low",
-    color: "#51cf66",
+    value: 'low',
+    label: 'Low',
+    color: '#51cf66',
   },
   {
-    value: "medium",
-    label: "Medium",
-    color: "#fab005",
+    value: 'medium',
+    label: 'Medium',
+    color: '#fab005',
   },
   {
-    value: "high",
-    label: "High",
-    color: "#ff922b",
+    value: 'high',
+    label: 'High',
+    color: '#ff922b',
   },
   {
-    value: "critical",
-    label: "Critical",
-    color: "#ff6b6b",
+    value: 'critical',
+    label: 'Critical',
+    color: '#ff6b6b',
   },
 ];
 
 export const SECTIONS = [
   {
-    id: "kurseong-ghum",
-    label: "Kurseong → Ghum",
+    id: 'kurseong-ghum',
+    label: 'Kurseong → Ghum',
   },
   {
-    id: "ghum-darjeeling",
-    label: "Ghum → Darjeeling",
+    id: 'ghum-darjeeling',
+    label: 'Ghum → Darjeeling',
   },
 ];
